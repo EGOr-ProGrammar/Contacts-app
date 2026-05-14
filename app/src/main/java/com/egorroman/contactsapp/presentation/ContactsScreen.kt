@@ -41,6 +41,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,11 +68,40 @@ fun ContactsScreen(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
 
+    var pendingCallContact by remember { mutableStateOf<Contact?>(null) }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGiven ->
         if (isGiven) {
             viewModel.loadContacts(context.contentResolver)
+        }
+    }
+
+    val callPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            pendingCallContact?.let { contact ->
+                val intent = Intent(Intent.ACTION_CALL, "tel:${contact.phone}".toUri())
+                context.startActivity(intent)
+            }
+        }
+        pendingCallContact = null
+    }
+
+    val makeCall = { contact: Contact ->
+        val isGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CALL_PHONE
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (isGranted) {
+            val intent = Intent(Intent.ACTION_CALL, "tel:${contact.phone}".toUri())
+            context.startActivity(intent)
+        } else {
+            pendingCallContact = contact
+            callPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
         }
     }
 
@@ -117,13 +149,7 @@ fun ContactsScreen(
                     } else {
                         ContactsList(
                             groupedContacts = state.contacts,
-                            onContactClick = { contact ->
-                                val intent = Intent(
-                                    Intent.ACTION_DIAL,
-                                    "tel:${contact.phone}".toUri()
-                                )
-                                context.startActivity(intent)
-                            }
+                            onContactClick = makeCall
                         )
                     }
                 }
